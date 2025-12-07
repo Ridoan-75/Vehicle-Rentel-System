@@ -31,7 +31,7 @@ const verifyAccess = () => {
       if (dbUser.role === "admin") {
         return next();
       }
-      
+
       if (user.id !== dbUser.id) {
         return res.status(403).json({
           success: false,
