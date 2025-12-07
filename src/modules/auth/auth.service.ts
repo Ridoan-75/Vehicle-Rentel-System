@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { pool } from "../../config/db"
+import { pool } from "../../config/db";
 import jwt from "jsonwebtoken";
 import config from "../../config";
 
@@ -11,6 +11,24 @@ const signupUser = async (userData: {
   role: string;
 }) => {
   const { name, email, password, phone, role } = userData;
+
+  // ✅ Validation
+  if (!name || !email || !password || !phone || !role) {
+    throw new Error('All fields are required');
+  }
+
+  if (password.length < 6) {
+    throw new Error('Password must be at least 6 characters long');
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    throw new Error('Invalid email format');
+  }
+
+  if (!['admin', 'customer'].includes(role)) {
+    throw new Error('Role must be either admin or customer');
+  }
 
   // Check if user already exists
   const existingUser = await pool.query(
@@ -35,6 +53,11 @@ const signupUser = async (userData: {
 };
 
 const loginUser = async (email: string, password: string) => {
+  // ✅ Validation
+  if (!email || !password) {
+    throw new Error('Email and password are required');
+  }
+
   // Find user by email
   const result = await pool.query(
     'SELECT * FROM users WHERE email = $1',
@@ -54,7 +77,7 @@ const loginUser = async (email: string, password: string) => {
     throw new Error('Invalid email or password');
   }
 
-  // Generate JWT
+  // ✅ Generate JWT (fixed config name)
   const secret = config.jwtSecret as string;
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },

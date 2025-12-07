@@ -2,16 +2,28 @@ import { Request, Response } from 'express';
 import { bookingService } from './booking.service';
 
 export const bookingController = {
-  // Create booking
+
   async createBooking(req: Request, res: Response) {
     try {
-      const { customer_id, vehicle_id, rent_start_date, rent_end_date } = req.body;
+      const { vehicle_id, rent_start_date, rent_end_date } = req.body;
+      const { user: { id: userId, role } } = req as any;
 
-      if (!customer_id || !vehicle_id || !rent_start_date || !rent_end_date) {
+
+      let customer_id = req.body.customer_id;
+      if (role === 'customer') {
+        customer_id = userId; 
+      } else if (role === 'admin' && !customer_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Admin must specify customer_id'
+        });
+      }
+
+      if (!vehicle_id || !rent_start_date || !rent_end_date) {
         return res.status(400).json({
           success: false,
           message: 'Missing required fields',
-          errors: 'All fields are required'
+          errors: 'vehicle_id, rent_start_date, and rent_end_date are required'
         });
       }
 
@@ -36,7 +48,7 @@ export const bookingController = {
     }
   },
 
-  // Get all bookings
+
   async getBookings(req: Request, res: Response) {
     try {
       const { user: { id: userId, role } } = req as any;
@@ -60,7 +72,7 @@ export const bookingController = {
     }
   },
 
-  // Update booking status
+
   async updateBooking(req: Request, res: Response) {
     try {
       const { bookingId } = req.params as { bookingId: string };
@@ -72,6 +84,16 @@ export const bookingController = {
           success: false,
           message: 'Status is required',
           errors: 'Status field is required'
+        });
+      }
+
+ 
+      const validStatuses = ['active', 'cancelled', 'returned'];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid status',
+          errors: 'Status must be active, cancelled, or returned'
         });
       }
 
@@ -95,7 +117,10 @@ export const bookingController = {
         data: booking
       });
     } catch (error: any) {
-      res.status(400).json({
+      const statusCode = error.message.includes('not found') ? 404 : 
+                         error.message.includes('Cannot') ? 403 : 400;
+      
+      res.status(statusCode).json({
         success: false,
         message: 'Error updating booking',
         errors: error.message

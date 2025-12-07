@@ -1,74 +1,91 @@
-import { pool } from '../../config/db';
+import { pool } from "../../config/db";
 
 export const bookingService = {
-  // Create booking
   async createBooking(bookingData: {
     customer_id: number;
     vehicle_id: number;
     rent_start_date: string;
     rent_end_date: string;
   }) {
-    const { customer_id, vehicle_id, rent_start_date, rent_end_date } = bookingData;
+    const { customer_id, vehicle_id, rent_start_date, rent_end_date } =
+      bookingData;
 
-    // Validate dates
+    const customerResult = await pool.query(
+      "SELECT id FROM users WHERE id = $1",
+      [customer_id]
+    );
+
+    if (customerResult.rows.length === 0) {
+      throw new Error("Customer not found");
+    }
+
     const startDate = new Date(rent_start_date);
     const endDate = new Date(rent_end_date);
 
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(0, 0, 0, 0);
+
     if (endDate <= startDate) {
-      throw new Error('End date must be after start date');
+      throw new Error("End date must be after start date");
     }
 
-    // Check vehicle availability
     const vehicleResult = await pool.query(
-      'SELECT * FROM vehicles WHERE id = $1',
+      "SELECT * FROM vehicles WHERE id = $1",
       [vehicle_id]
     );
 
     if (vehicleResult.rows.length === 0) {
-      throw new Error('Vehicle not found');
+      throw new Error("Vehicle not found");
     }
 
     const vehicle = vehicleResult.rows[0];
 
-    if (vehicle.availability_status !== 'available') {
-      throw new Error('Vehicle is not available for booking');
+    if (vehicle.availability_status !== "available") {
+      throw new Error("Vehicle is not available for booking");
     }
 
-    // Calculate number of days and total price
-    const numberOfDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-    const totalPrice = numberOfDays * parseFloat(vehicle.daily_rent_price);
+    const numberOfDays = Math.ceil(
+      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const totalPrice = numberOfDays * parseInt(vehicle.daily_rent_price);
 
-    // Create booking
     const bookingResult = await pool.query(
-      'INSERT INTO bookings (customer_id, vehicle_id, rent_start_date, rent_end_date, total_price, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [customer_id, vehicle_id, rent_start_date, rent_end_date, totalPrice, 'active']
+      "INSERT INTO bookings (customer_id, vehicle_id, rent_start_date, rent_end_date, total_price, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+      [
+        customer_id,
+        vehicle_id,
+        rent_start_date,
+        rent_end_date,
+        totalPrice,
+        "active",
+      ]
     );
 
-    // Update vehicle availability status
     await pool.query(
-      'UPDATE vehicles SET availability_status = $1 WHERE id = $2',
-      ['booked', vehicle_id]
+      "UPDATE vehicles SET availability_status = $1 WHERE id = $2",
+      ["booked", vehicle_id]
     );
 
     const booking = bookingResult.rows[0];
 
-    // Return booking with vehicle details
     return {
       ...booking,
       vehicle: {
         vehicle_name: vehicle.vehicle_name,
-        daily_rent_price: vehicle.daily_rent_price
-      }
+        daily_rent_price: vehicle.daily_rent_price,
+      },
     };
   },
 
-  // Get all bookings (admin sees all, customer sees their own)
-  async getBookings(userId: number, userRole: string, isAdmin: boolean = false) {
+  async getBookings(
+    userId: number,
+    userRole: string,
+    isAdmin: boolean = false
+  ) {
     let query;
     let params: any[] = [];
 
     if (isAdmin) {
-      // Admin sees all bookings
       query = `
         SELECT
           b.*,
@@ -79,10 +96,9 @@ export const bookingService = {
         FROM bookings b
         JOIN users c ON b.customer_id = c.id
         JOIN vehicles v ON b.vehicle_id = v.id
-        ORDER BY b.id
+        ORDER BY b.id DESC
       `;
     } else {
-      // Customer sees only their bookings
       query = `
         SELECT
           b.id,
@@ -97,7 +113,7 @@ export const bookingService = {
         FROM bookings b
         JOIN vehicles v ON b.vehicle_id = v.id
         WHERE b.customer_id = $1
-        ORDER BY b.id
+        ORDER BY b.id DESC
       `;
       params.push(userId);
     }
@@ -106,84 +122,73 @@ export const bookingService = {
     return result.rows;
   },
 
-  // Get booking by ID
   async getBookingById(id: number) {
-    const result = await pool.query('SELECT * FROM bookings WHERE id = $1', [id]);
+    const result = await pool.query("SELECT * FROM bookings WHERE id = $1", [
+      id,
+    ]);
     if (result.rows.length === 0) {
-      throw new Error('Booking not found');
+      throw new Error("Booking not found");
     }
     return result.rows[0];
   },
 
-  // Update booking status
-  async updateBookingStatus(id: number, status: string, userId: number, userRole: string) {
+  async updateBookingStatus(
+    id: number,
+    status: string,
+    userId: number,
+    userRole: string
+  ) {
     const booking = await this.getBookingById(id);
 
     // Customer can only cancel before start date
-    if (userRole === 'customer') {
-      if (status !== 'cancelled') {
-        throw new Error('Customers can only cancel bookings');
+    if (userRole === "customer") {
+      if (status !== "cancelled") {
+        throw new Error("Customers can only cancel bookings");
       }
 
       if (booking.customer_id !== userId) {
-        throw new Error('Cannot cancel another customer\'s booking');
+        throw new Error("Cannot cancel another customer's booking");
       }
 
       const startDate = new Date(booking.rent_start_date);
-      if (new Date() >= startDate) {
-        throw new Error('Cannot cancel booking after start date');
+      startDate.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (today >= startDate) {
+        throw new Error("Cannot cancel booking on or after start date");
       }
     }
 
-    // Admin can mark as returned
-    if (status === 'returned' && userRole !== 'admin') {
-      throw new Error('Only admin can mark booking as returned');
+    if (status === "returned" && userRole !== "admin") {
+      throw new Error("Only admin can mark booking as returned");
     }
 
-    // Update booking status
     const result = await pool.query(
-      'UPDATE bookings SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      "UPDATE bookings SET status = $1 WHERE id = $2 RETURNING *",
       [status, id]
     );
 
-    // If cancelled or returned, make vehicle available
-    if (status === 'cancelled' || status === 'returned') {
+    if (status === "cancelled" || status === "returned") {
       await pool.query(
-        'UPDATE vehicles SET availability_status = $1 WHERE id = $2',
-        ['available', booking.vehicle_id]
+        "UPDATE vehicles SET availability_status = $1 WHERE id = $2",
+        ["available", booking.vehicle_id]
       );
 
-      // If returned, include vehicle availability in response
-      if (status === 'returned') {
+      if (status === "returned") {
         const vehicleResult = await pool.query(
-          'SELECT availability_status FROM vehicles WHERE id = $1',
+          "SELECT availability_status FROM vehicles WHERE id = $1",
           [booking.vehicle_id]
         );
         return {
           ...result.rows[0],
           vehicle: {
-            availability_status: vehicleResult.rows[0].availability_status
-          }
+            availability_status: vehicleResult.rows[0].availability_status,
+          },
         };
       }
     }
 
     return result.rows[0];
   },
-
-  // Delete booking (optional)
-  async deleteBooking(id: number) {
-    const booking = await this.getBookingById(id);
-
-    // Make vehicle available if booking was active
-    if (booking.status === 'active') {
-      await pool.query(
-        'UPDATE vehicles SET availability_status = $1 WHERE id = $2',
-        ['available', booking.vehicle_id]
-      );
-    }
-
-    const result = await pool.query('DELETE FROM bookings WHERE id = $1 RETURNING id', [id]);
-    return result.rows[0];
-  }
 };

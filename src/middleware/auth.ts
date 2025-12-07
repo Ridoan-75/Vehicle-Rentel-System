@@ -5,9 +5,9 @@ import config from "../config";
 const auth = () => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const token = req.headers.authorization;
+      const token = req.headers.authorization?.split(' ')[1];
       if (!token) {
-        return res.status(500).json({ message: "You have no access token" });
+        return res.status(401).json({ message: "You have no access token" });
       }
       const decoded = jwt.verify(
         token,
@@ -15,12 +15,11 @@ const auth = () => {
       ) as JwtPayload;
       req.user = decoded;
     } catch (error: any) {
-      res.status(500).json({
+      return res.status(401).json({
         succcess: false,
         message: error.message,
       });
     }
-    next();
   };
 };
 

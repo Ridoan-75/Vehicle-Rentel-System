@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import { JwtPayload } from "jsonwebtoken";
 import { pool } from "../config/db";
 
-const verifyAccess = () => {
+const verifyAccess = (allowedRoles: string[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = req.user as JwtPayload;
@@ -28,20 +28,19 @@ const verifyAccess = () => {
 
       const dbUser = result.rows[0];
 
-      if (dbUser.role === "admin") {
-        return next();
-      }
-
-      if (user.id !== dbUser.id) {
+      if (!allowedRoles.includes(dbUser.role)) {
         return res.status(403).json({
           success: false,
-          message: "Access denied",
+          message: "Access denied - Insufficient permissions",
         });
       }
 
-      return next();
+      req.user = { ...user, role: dbUser.role };
+
+      next();
+
     } catch (err: any) {
-      return res.status(401).json({
+      return res.status(500).json({
         success: false,
         message: err.message || "Something went wrong",
       });

@@ -32,7 +32,7 @@ const initDB = async () => {
   `);
 
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS booking (
+    CREATE TABLE IF NOT EXISTS bookings (
       id SERIAL PRIMARY KEY,
       customer_id INTEGER NOT NULL REFERENCES users(id),
       vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
@@ -40,7 +40,8 @@ const initDB = async () => {
       rent_end_date DATE NOT NULL,
       total_price INT NOT NULL CHECK (total_price > 0),
       status VARCHAR(20) NOT NULL DEFAULT 'active'
-        CHECK (status IN ('active', 'cancelled', 'returned'))
+        CHECK (status IN ('active', 'cancelled', 'returned')),
+      CHECK (rent_end_date > rent_start_date)
     );
   `);
 };
