@@ -140,7 +140,6 @@ export const bookingService = {
   ) {
     const booking = await this.getBookingById(id);
 
-    // Customer can only cancel before start date
     if (userRole === "customer") {
       if (status !== "cancelled") {
         throw new Error("Customers can only cancel bookings");
